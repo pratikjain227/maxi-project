@@ -2,28 +2,54 @@ const mongodb = require("mongodb");
 const getDb = require("../util/database").getDb;
 const http = require("http");
 
-const servers = [
-  // {
-  //   url: "http://doesNotExist.boldtech.co",
-  //   priority: 1
-  // },
+const serverData = [
+  {
+    url: "http://doesNotExist.boldtech.co",
+    priority: 1
+  },
   {
     url: "www.boldtech.co",
     priority: 7
   },
-  // {
-  //   url: "www.offline.boldtech.co",
-  //   priority: 2
-  // },
+  {
+    url: "www.offline.boldtech.co",
+    priority: 2
+  },
   {
     url: "www.google.com",
     priority: 4
   },
   {
     url: "www.vyasdental.com",
-    priority: 10
+    priority: 2
   }
 ];
+
+let promiseList = [];
+serverData.map(eachServer => {
+  promiseList.push(
+    new Promise(function(res, rej) {
+      let eachServerOptions = {
+        host: eachServer.url,
+        timeout: 5000,
+        method: "GET"
+      };
+      console.log(eachServerOptions);
+      var req = http.request(eachServerOptions, function(response) {
+        console.log("Status Code = " + response.statusCode);
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          res(eachServer);
+        } else {
+          rej(eachServer);
+        }
+      });
+      req.on("error", function(err) {
+        rej(eachServer);
+      });
+      req.end();
+    })
+  );
+});
 
 class Server {
   constructor(serverName, serverPriority) {
@@ -31,83 +57,35 @@ class Server {
     this.serverPriority = serverPriority;
   }
 
-  static findServer() {
-    return new Promise((res, rej) => {
-      res(servers);
-    })
-      .then(serversData => {
-        return serversData.map(eachServer => ({
-          host: eachServer.url,
-          timeout: 5000,
-          method: "GET"
-        }));
-      })
-      .then(urlOptions => {
-        return urlOptions.map(
-          opt =>
-            new Promise(function(res, rej) {
-              console.log(opt);
-              var req = http.request(opt, function(response) {
-                console.log("Status Code = " + response.statusCode);
-                if (response.statusCode >= 200 && response.statusCode < 300) {
-                  res(response.statusCode);
-                } else {
-                  rej("some message");
-                }
-              });
-              req.on("error", function(err) {
-                rej(err);
-              });
-              req.end();
-            })
+  static findServer(res, req) {
+    Promise.allSettled(promiseList)
+      .then(serverStatus => {
+        const onlineServers = serverStatus.filter(
+          e => e.status === "fulfilled"
         );
-      })
-      .then(urlPromises => {
-        console.log(urlPromises);
-        return Promise.race(urlPromises)
-          .then(resp => {
-            console.log("Final Block");
-            console.log(resp);
-            return true;
-          })
-          .catch(err => {
-            console.log("Error from Catch : " + err);
-            return false;
-          });
-      })
-      .then(isServerOnline => {
-        console.log("isServerOnline : >>>>>>>> " + isServerOnline);
-        if (!isServerOnline) {
+        console.log(
+          "onlineServers : >>>>>>>> length = " + onlineServers.length
+        );
+        console.log(onlineServers);
+        if (onlineServers.length === 0) {
           return rej("All servers are offline");
         } else {
-          return servers.sort((a, b) =>
-            a.priority > b.priority ? 1 : b.priority > a.priority ? -1 : 0
-          );
+          return onlineServers;
         }
       })
-      .then(sortedServers => {
-        console.log("Sorted Servers : >>> ");
-        console.log(sortedServers);
-        for (const eachServer of sortedServers) {
-          new Promise(function(res, rej) {
-            let eachServerOptions = {
-              host: eachServer.url,
-              timeout: 5000,
-              method: "GET"
-            };
-            var req = http.request(eachServerOptions, function(response) {
-              console.log("Status Code = " + response.statusCode);
-              if (response.statusCode >= 200 && response.statusCode < 300) {
-                console.log("Yay Moment.... !");
-                return res(response.statusCode);
-              }
-            });
-            req.on("error", function(err) {
-              rej(err);
-            });
-            req.end();
-          });
-        }
+      .then(onlineServers => {
+        const sortedOnlineServers = onlineServers.sort((s1, s2) =>
+          s1.value.priority > s2.value.priority
+            ? 1
+            : s2.value.priority > s1.value.priority
+            ? -1
+            : 0
+        );
+        console.log("sortedOnlineServers : >>>>>>>> ### ");
+        console.log(sortedOnlineServers);
+        console.log("Printing resolution");
+        console.log(sortedOnlineServers[0].value.url);
+        return res(sortedOnlineServers[0].value.url);
       })
       .catch(err => {
         console.log(err);

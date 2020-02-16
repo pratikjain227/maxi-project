@@ -4,6 +4,8 @@ const serverController = require("../controllers/server");
 
 const router = express.Router();
 
-router.get("/", serverController.getIndex);
+router.get("/", function(req, res) {
+  serverController.findServer();
+});
 
 module.exports = router;
